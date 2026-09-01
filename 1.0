@@ -1,0 +1,46 @@
+#include <stdio.h>
+#include <unistd.h>
+#include "ohos_init.h"
+#include "cmsis_os2.h"
+
+static void thread1(void);
+static void thread2(void);
+
+/******任务创建*****/
+static void Hello_World(void)
+{
+    osThreadAttr_t attr;
+    attr.attr_bits = 0U;
+    attr.cb_mem = NULL;
+    attr.cb_size = 0U;
+    attr.stack_mem = NULL;
+    attr.stack_size = 1024 * 4;
+
+    attr.name = "thread1";
+    attr.priority = 25;
+    if (osThreadNew((osThreadFunc_t)thread1, NULL, &attr) == NULL)
+    {
+        printf("Failed to create thread1!\n");
+    }
+
+    attr.name = "thread2";
+    attr.priority = 25;
+    if (osThreadNew((osThreadFunc_t)thread2, NULL, &attr) == NULL)
+    {
+        printf("Failed to create thread2!\n");
+    }
+}
+
+/******任务实现******/
+static void thread2(void)
+{
+    sleep(1);
+    while (1)
+    {
+        printf("任务2正在运行!\n");
+        printf("Hello QST!\r\n");
+        usleep(3000000);
+    }
+}
+
+APP_FEATURE_INIT(Hello_World); //启动任务
