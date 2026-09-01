@@ -1,0 +1,95 @@
+#include <stdio.h>
+#include <unistd.h>
+#include "ohos_init.h"
+#include "wifiiot_gpio.h"
+#include "wifiiot_gpio_ex.h"
+#include <stdlib.h>
+#include <memory.h>
+#include "cmsis_os2.h"
+#include "hi_io.h"
+#include "hi_time.h"
+
+#define GPIOL 13
+#define GPIOR 14
+
+// 定时器相关变量
+osTimerId_t timerHello;      // 打印 "hello QST" 的定时器
+osTimerId_t timerTCRT;       // 红外扫描定时器
+uint32_t argHello = 0;
+uint32_t argTCRT = 0;
+
+/***** 获取红外传感器电平 *****/
+void get_tcrt5000_value(void)
+{
+    WifiIotGpioValue id_status;
+    GpioGetInputVal(GPIOL, &id_status);
+    printf("left %s\r\n", (id_status == WIFI_IOT_GPIO_VALUE0) ? "black" : "white");
+    GpioGetInputVal(GPIOR, &id_status);
+    printf("right %s\r\n", (id_status == WIFI_IOT_GPIO_VALUE0) ? "black" : "white");
+}
+
+/***** 定时器1回调：每3秒打印 hello QST *****/
+void TimerHello_Callback(void *arg)
+{
+    (void)arg;
+    printf("hello QST\r\n");
+}
+
+/***** 定时器2回调：红外扫描（周期可调，此处设为1秒） *****/
+void TimerTCRT_Callback(void *arg)
+{
+    (void)arg;
+    get_tcrt5000_value();
+}
+
+/***** 主任务（仅用于初始化） *****/
+static void TCRTTask(void)
+{
+    printf("TCRT task started, timers created.\r\n");
+    while (1) {
+        osDelay(10000);  // 保持任务存活，不占CPU
+    }
+}
+
+/***** 初始化函数 *****/
+void TCRT(void)
+{
+    // GPIO 初始化
+    GpioInit();
+    IoSetFunc(WIFI_IOT_IO_NAME_GPIO_13, WIFI_IOT_IO_FUNC_GPIO_13_GPIO);
+    IoSetFunc(WIFI_IOT_IO_NAME_GPIO_14, WIFI_IOT_IO_FUNC_GPIO_14_GPIO);
+    GpioSetDir(WIFI_IOT_IO_NAME_GPIO_13, WIFI_IOT_GPIO_DIR_IN);
+    GpioSetDir(WIFI_IOT_IO_NAME_GPIO_14, WIFI_IOT_GPIO_DIR_IN);
+
+    // 创建主任务（仅初始化用）
+    osThreadAttr_t attr = {
+        .name = "TCRTTask",
+        .stack_size = 10240,
+        .priority = 25
+    };
+    if (osThreadNew((osThreadFunc_t)TCRTTask, NULL, &attr) == NULL) {
+        printf("Failed to create TCRTTask!\n");
+    }
+
+    // ---------- 创建定时器1：每3秒打印 hello QST ----------
+    // Hi3861 1 tick = 10ms，3秒 = 300 ticks
+    timerHello = osTimerNew(TimerHello_Callback, osTimerPeriodic, &argHello, NULL);
+    if (timerHello != NULL) {
+        if (osTimerStart(timerHello, 300U) != osOK) {
+            printf("Failed to start hello timer\r\n");
+        } else {
+            printf("Hello timer started (3s interval)\r\n");
+        }
+    }
+
+    // ---------- 创建定时器2：红外扫描，间隔1秒（100 ticks） ----------
+    // 若要演示“不同秒间隔”，可修改此值（如 200 为2秒，500为5秒等）
+    timerTCRT = osTimerNew(TimerTCRT_Callback, osTimerPeriodic, &argTCRT, NULL);
+    if (timerTCRT != NULL) {
+        if (osTimerStart(timerTCRT, 100U) != osOK) {  // 1秒 = 100 ticks
+            printf("Failed to start TCRT timer\r\n");
+        } else {
+            printf("TCRT timer started (1s interval)\r\n");
+        }
+    }
+}
